@@ -1,5 +1,5 @@
 streamlit
-langgraph
+langgraph==0.2.60
 langchain
 requests
 pypdf
