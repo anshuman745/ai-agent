@@ -1,41 +1,41 @@
 import streamlit as st
 from langgraph.graph import StateGraph, END
 from typing import TypedDict, List
-from langchain_ollama import OllamaLLM
 import requests
 from pypdf import PdfReader
 
-# 🔹 LLM
-llm = OllamaLLM(model="llama3")
+# 🔹 Fake LLM (for cloud deployment)
+class FakeLLM:
+    def invoke(self, prompt):
+        return "🤖 Demo AI Response: This is a simulated answer (Ollama not available in cloud)."
+
+llm = FakeLLM()
 
 # 🔹 State
 class AgentState(TypedDict):
     question: str
     answer: str
     history: List[str]
-    step: int
     pdf_text: str
 
 # 🔹 Nodes
 
 def explain_node(state):
-    response = llm.invoke(f"Explain clearly: {state['question']}")
+    response = llm.invoke(f"Explain: {state['question']}")
     return {
         "answer": response,
-        "history": state["history"] + [f"User: {state['question']}", f"AI: {response}"],
-        "step": state["step"] + 1
+        "history": state["history"] + [f"User: {state['question']}", f"AI: {response}"]
     }
 
 def math_node(state):
     try:
         result = eval(state["question"])
-        answer = f"Answer: {result}"
+        answer = f"🧮 Answer: {result}"
     except:
-        answer = "Invalid math"
+        answer = "❌ Invalid math expression"
     return {
         "answer": answer,
-        "history": state["history"] + [f"User: {state['question']}", f"AI: {answer}"],
-        "step": state["step"] + 1
+        "history": state["history"] + [f"User: {state['question']}", f"AI: {answer}"]
     }
 
 def search_node(state):
@@ -43,57 +43,49 @@ def search_node(state):
     try:
         res = requests.get(f"https://api.duckduckgo.com/?q={query}&format=json")
         data = res.json()
-        answer = data.get("AbstractText", "No result found")
+        answer = data.get("AbstractText", "🌐 No result found")
     except:
-        answer = "Search failed"
+        answer = "❌ Search failed"
     return {
         "answer": answer,
-        "history": state["history"] + [f"User: {query}", f"AI: {answer}"],
-        "step": state["step"] + 1
+        "history": state["history"] + [f"User: {query}", f"AI: {answer}"]
     }
 
 def pdf_node(state):
     if not state.get("pdf_text"):
-        return {"answer": "Upload a PDF first", "history": state["history"], "step": state["step"] + 1}
+        return {
+            "answer": "📄 Please upload a PDF first",
+            "history": state["history"]
+        }
 
     response = llm.invoke(f"""
-    Based on this document:
-    {state['pdf_text'][:3000]}
+    Based on document:
+    {state['pdf_text'][:2000]}
 
     Answer: {state['question']}
     """)
 
     return {
         "answer": response,
-        "history": state["history"] + [f"User: {state['question']}", f"AI: {response}"],
-        "step": state["step"] + 1
+        "history": state["history"] + [f"User: {state['question']}", f"AI: {response}"]
     }
 
 # 🔹 Router
+
 def router(state):
-    q = state["question"]
+    q = state["question"].lower()
 
-    decision = llm.invoke(f"""
-    Classify:
-    {q}
-
-    Options:
-    math, explain, search, pdf
-
-    Return only one word.
-    """)
-
-    decision = decision.lower()
-
-    if "math" in decision:
+    # simple rule-based routing (reliable for demo)
+    if any(char.isdigit() for char in q):
         return "math"
-    elif "search" in decision:
+    elif "search" in q or "who" in q or "what" in q:
         return "search"
-    elif "pdf" in decision:
+    elif "pdf" in q:
         return "pdf"
     return "explain"
 
 # 🔹 Graph
+
 graph = StateGraph(AgentState)
 
 graph.add_node("explain", explain_node)
@@ -106,22 +98,22 @@ graph.add_conditional_edges(
     router,
     {
         "math": "math",
-        "explain": "explain",
         "search": "search",
-        "pdf": "pdf"
+        "pdf": "pdf",
+        "explain": "explain"
     }
 )
 
 graph.add_edge("math", END)
-graph.add_edge("explain", END)
 graph.add_edge("search", END)
 graph.add_edge("pdf", END)
+graph.add_edge("explain", END)
 
 app_graph = graph.compile()
 
-# 🔹 Streamlit UI
-st.set_page_config(page_title="🔥 AI Super Agent", page_icon="🤖")
+# 🔹 UI
 
+st.set_page_config(page_title="🔥 AI Super Agent", page_icon="🤖")
 st.title("🤖 AI Super Agent")
 
 # Memory
@@ -132,7 +124,7 @@ if "messages" not in st.session_state:
 if "pdf_text" not in st.session_state:
     st.session_state.pdf_text = ""
 
-# 📄 PDF Upload
+# 📄 Upload PDF
 uploaded_file = st.file_uploader("Upload PDF", type=["pdf"])
 
 if uploaded_file:
@@ -141,7 +133,7 @@ if uploaded_file:
     for page in reader.pages:
         text += page.extract_text() or ""
     st.session_state.pdf_text = text
-    st.success("PDF loaded!")
+    st.success("✅ PDF loaded")
 
 # 💬 Chat input
 user_input = st.chat_input("Ask anything...")
@@ -152,7 +144,6 @@ if user_input:
     result = app_graph.invoke({
         "question": user_input,
         "history": st.session_state.history,
-        "step": 0,
         "pdf_text": st.session_state.pdf_text
     })
 
