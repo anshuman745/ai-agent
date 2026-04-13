@@ -1,6 +1,5 @@
 streamlit
 langgraph
 langchain
-langchain-ollama
 requests
 pypdf
